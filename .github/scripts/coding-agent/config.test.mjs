@@ -12,6 +12,7 @@ import {
   findAgentByAssignee,
   findAgentByBot,
   getAgent,
+  isCoordinator,
   isValidFeatureName,
   loadConfig,
   validateAgentRelations,
@@ -33,10 +34,12 @@ function createAgentsConfig() {
     bot: `${id}-app[bot]`,
     workflow: `coding-agent-${id}.yml`,
     appClientId: `${id}-client-id`,
-    appPrivateKeyRef: `op://CI/${id}/private key`,
-    apiKeyRef: `op://CI/${id}/credential`,
   });
   return {
+    coordinator: {
+      bot: 'coordinator-app[bot]',
+      appClientId: 'coordinator-client-id',
+    },
     agents: { claude: agent('claude'), codex: agent('codex') },
     roles: {
       author: { specification: 'claude', 'domain-model': 'claude', architecture: 'claude', planning: 'claude' },
@@ -121,6 +124,22 @@ describe('validateAgentRelations', () => {
     config.agents.codex.bot = 'Claude-App[bot]';
 
     assert.deepEqual(validateAgentRelations(config), ['agents.json: "claude" と "codex" の bot が同じです']);
+  });
+
+  it('進行役の Bot 名をエージェントと同じにできない', () => {
+    const config = createAgentsConfig();
+    config.agents.claude.bot = 'Coordinator-App[bot]';
+
+    assert.deepEqual(validateAgentRelations(config), ['agents.json: coordinator と "claude" の bot が同じです']);
+  });
+});
+
+describe('isCoordinator', () => {
+  it('進行役の Bot か判定する (大文字と小文字は区別しない)', () => {
+    const config = createAgentsConfig();
+    assert.equal(isCoordinator(config, 'COORDINATOR-APP[bot]'), true);
+    assert.equal(isCoordinator(config, 'claude-app[bot]'), false);
+    assert.equal(isCoordinator(config, undefined), false);
   });
 });
 
