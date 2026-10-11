@@ -87,11 +87,11 @@ sequenceDiagram
     alt 受付停止になっていた
         L->>DB: 記録 (ログインの失敗、E-05) / COMMIT
         L-->>C: E-05
-    else 一致した
+    else 一致し、アカウントの行を FOR UPDATE で読み直してメールアドレスとハッシュが変わっていない
         L->>DB: 連続失敗回数を 0 に / sessions に行を追加 / 記録 (ログインの成功) / COMMIT
         L-->>C: 成功 (トークン、表示名)
         C-->>B: 200 Set-Cookie: SESSION=...
-    else 一致しなかった
+    else 一致しなかった、または読み直しで変わっていた
         L->>DB: 連続失敗回数 + 1 (5 なら受付停止) / 記録 (ログインの失敗、E-04) / COMMIT
         L-->>C: E-04
     end
@@ -105,6 +105,9 @@ sequenceDiagram
 /
 ├── package.json            (既存。commitlint と husky のため。変更しない)
 ├── compose.yaml            (開発用の PostgreSQL を起動する)
+├── compose/postgres/
+│   └── init.sql            (データベースの 2 つの利用者を作る。7.6)
+├── certs/                  (開発用の証明書。リポジトリに入れない。4 章)
 ├── backend/                (Javalin のアプリケーション)
 │   ├── settings.gradle.kts
 │   ├── build.gradle.kts
@@ -144,7 +147,7 @@ com.example.app
 │   ├── SecurityHeaders.java      応答に共通のヘッダーを付ける (9.1)
 │   └── RequestLogger.java        アプリケーションのログに要求の概要を書く (9.3)
 ├── db/
-│   ├── Database.java             HikariCP と Jdbi の組み立て、Flyway の実行
+│   ├── Database.java             Flyway の実行 (マイグレーション用の利用者)、HikariCP と Jdbi の組み立て (アプリケーション用の利用者)
 │   └── Tx.java                   トランザクションの補助
 ├── auth/
 │   ├── value/
@@ -237,12 +240,20 @@ frontend/src
 | `APP_TLS_CERT_PATH` | はい | ― | サーバー証明書 (PEM) のパス |
 | `APP_TLS_KEY_PATH` | はい | ― | 秘密鍵 (PEM) のパス |
 | `APP_DB_URL` | はい | ― | JDBC の URL (例: `jdbc:postgresql://localhost:5432/app`) |
-| `APP_DB_USER` | はい | ― | データベースの利用者名 |
-| `APP_DB_PASSWORD` | はい | ― | データベースのパスワード |
+| `APP_DB_USER` | はい | ― | 要求の処理と定期処理で使う、データベースの利用者名 (7.6 のアプリケーション用の利用者) |
+| `APP_DB_PASSWORD` | はい | ― | `APP_DB_USER` のパスワード |
+| `APP_DB_MIGRATION_USER` | はい | ― | Flyway のマイグレーションで使う、データベースの利用者名 (7.6 のマイグレーション用の利用者) |
+| `APP_DB_MIGRATION_PASSWORD` | はい | ― | `APP_DB_MIGRATION_USER` のパスワード |
 | `APP_DB_POOL_SIZE` | いいえ | `20` | コネクションプールの最大の数 |
 | `APP_STATIC_DIR` | いいえ | `../frontend/dist` | フロントエンドのビルド結果のディレクトリ |
 
-開発の環境では、`compose.yaml` で PostgreSQL を起動し、自己署名の証明書を使う。フロントエンドの開発では Vite の開発サーバー (`http://localhost:5173`) を使い、`/api` を `https://localhost:8443` へ中継する (`vite.config.ts` の `server.proxy`、`secure: false`)。`localhost` はブラウザーが安全なコンテキストとして扱うため、`Secure` 付きの Cookie も使える。
+開発の環境では、`compose.yaml` で PostgreSQL を起動する (データベースの利用者は 7.6 のとおり 2 つ作る)。開発の環境でも、ブラウザーからバックエンドまでのすべての区間を HTTPS にする (仕様書 10.3)。
+
+- 証明書は、`mkcert` で作ったローカルの認証局が発行した `localhost` の証明書 (`certs/localhost.pem`、`certs/localhost-key.pem`) を使う。`mkcert -install` で、認証局を開発者の端末のブラウザーに信頼させる。証明書と秘密鍵はリポジトリに入れない (`.gitignore` に `certs/` を加える)
+- バックエンドは、この証明書を `APP_TLS_CERT_PATH`、`APP_TLS_KEY_PATH` で読み、`https://localhost:8443` で待ち受ける
+- フロントエンドの開発では Vite の開発サーバーを HTTPS で動かす (`vite.config.ts` の `server.https` に同じ証明書と秘密鍵を指定し、`https://localhost:5173` で待ち受ける)。`server.https` を指定すると、Vite はそのポートで HTTP を受け付けない。画面の自動更新 (HMR) の WebSocket も `wss` になる
+- Vite は `/api` を `https://localhost:8443` へ中継する (`server.proxy`)。中継でも証明書を検証する (`secure: true`)。Node.js が mkcert の認証局を信頼するように、`NODE_EXTRA_CA_CERTS` に認証局の証明書 (`$(mkcert -CAROOT)/rootCA.pem`) を指定して Vite を起動する (`frontend/package.json` の `dev` スクリプトの説明に書く)
+- そのため、ブラウザーと Vite の間も、Vite と Javalin の間も暗号化され、パスワードやアカウントの情報が暗号化されずに送受信される区間は無い。`Secure` 付きの Cookie も、HTTPS の通信として送受信される
 
 ## 5. API
 
@@ -395,9 +406,19 @@ E-04 と E-06 はどちらも 401 だが、フロントエンドは `code` で�
 5. トランザクションを始め、`login_attempts` の行を、無ければ追加したうえで `SELECT ... FOR UPDATE` で読む
    1. `locked_until` があり、今の日時が `locked_until` より前なら (手順 3 の後に、ほかの要求で受付停止になった場合)、記録「ログインの失敗」(理由 E-05) を書いてコミットし、E-05
    2. `locked_until` があり、今の日時が `locked_until` 以降なら、`failure_count` を 0、`locked_until` を空にする (受付停止が終わった後は 0 から数え直す)
-   3. 手順 4 で一致し、かつアカウントの行が残っていて `password_hash` が手順 4 で照合した値と同じなら成功とする。`failure_count` を 0 にし、`sessions` に行を追加し、記録「ログインの成功」を書く
-   4. それ以外は失敗とする。`failure_count` を 1 増やし、5 になったら `locked_until` を今の日時 + 15 分にする。記録「ログインの失敗」(理由 E-04) を書く
+   3. 手順 4 で一致した場合は、手順 4 で読んだアカウントの行を、`id` で `SELECT ... FOR UPDATE` で読み直す。行が残っていて、`email_normalized` が入力したメールアドレスから作った値と同じで、かつ `password_hash` が手順 4 で照合した値と同じなら成功とする。`failure_count` を 0 にし、`sessions` に行を追加し、記録「ログインの成功」を書く
+   4. それ以外は失敗とする (手順 4 で一致しなかった場合と、手順 4 の後に OP-7 でアカウントが削除された、OP-5 でメールアドレスが変わった、OP-6 でパスワードが変わったために 5-3 の再確認を満たさなかった場合)。`failure_count` を 1 増やし、5 になったら `locked_until` を今の日時 + 15 分にする。記録「ログインの失敗」(理由 E-04) を書く
 6. コミットする。成功なら 200、失敗なら E-04
+
+OP-5、OP-6、OP-7 との整合: 5-3 の再確認から、セッションの行の追加と記録の書き込み、手順 6 のコミットまで、アカウントの行のロックを持ち続ける。OP-5、OP-6、OP-7 も同じ行を `FOR UPDATE` で読むため、ログインの成功の判断とこれらの操作は、どちらかが先にコミットするまで待ち合い、順に処理される。
+
+- OP-5 が先にコミットした場合: ログインは、変更後の `email_normalized` を読むため、古いメールアドレスでは再確認を満たさず E-04 になる。新しいメールアドレスでだけログインできる (仕様書 6.5)
+- ログインが先にコミットした場合: ログインは、その時点のメールアドレスとパスワードで成功する。その後の OP-5、OP-6 は通常どおり処理され、作られたセッションは L-5 のとおり残る。その後の OP-7 は、作られたセッションも `ON DELETE CASCADE` で削除する
+- OP-6 が先にコミットした場合: `password_hash` が変わっているため E-04 になる。OP-7 が先にコミットした場合: 行が無いため E-04 になる
+
+ロックを取る順番は、どの操作でも「`login_attempts` の行 → `accounts` の行」とする。OP-5、OP-6、OP-7 は `login_attempts` をロックしないため、ログインとの間でデッドロックは起こらない。ロックを持つ時間を短くするため、パスワードの照合 (手順 4) はトランザクションの前に行い、5-3 ではハッシュの文字列を比べるだけにする。
+
+記録の対象 (7.5.1) は、5-3 で読み直した行、または (読み直しで条件を満たさなかった場合は) トランザクションの中で `email_normalized` で読み直したアカウントで決める。
 
 E-90 の扱い: 手順 1 ～ 6 のどこかで E-90 になった場合は、そのトランザクションをロールバックしたうえで、別のトランザクションで記録「ログインの失敗」(理由 E-90) を 1 回だけ書こうとする。書けなくても、応答は E-90 のままとする (仕様書 7.4)。E-90 では、連続失敗回数を増やさない。
 
@@ -711,7 +732,26 @@ erDiagram
 
 ### 7.6 データベースの権限
 
-アプリケーションが使うデータベースの利用者には、4 つのテーブルへの `SELECT`、`INSERT`、`UPDATE`、`DELETE` だけを与える。Flyway のマイグレーションは、起動時に同じ利用者で行う (`Database.java`)。`audit_logs` の `UPDATE` は、アプリケーションのコードから行わない。
+データベースの利用者を、役割ごとに 2 つに分ける。
+
+| 利用者 | 例 (開発の環境) | 権限 | 使う場面 |
+| --- | --- | --- | --- |
+| マイグレーション用 | `app_owner` | データベースの所有者。`public` スキーマにテーブルを作る、変える権限を持つ。4 つのテーブルと、Flyway のスキーマ履歴テーブル (`flyway_schema_history`) の所有者になる | 起動時の Flyway のマイグレーションだけ |
+| アプリケーション用 | `app_user` | `public` スキーマの `USAGE` と、下表のテーブルへの DML だけ。テーブルを作る、変える、消す権限は持たない | 要求の処理と定期処理 (HikariCP のコネクションプール) |
+
+アプリケーション用の利用者に与える権限は次のとおりとする。`flyway_schema_history` には権限を与えない。
+
+| テーブル | 権限 |
+| --- | --- |
+| `accounts`、`sessions`、`login_attempts` | `SELECT`、`INSERT`、`UPDATE`、`DELETE` |
+| `audit_logs` | `SELECT`、`INSERT`、`DELETE` (`DELETE` は定期処理のため。記録を書き換えないため `UPDATE` は与えない) |
+
+マイグレーションの実行の仕方:
+
+- `Database.java` は、起動時に、まずマイグレーション用の利用者 (`APP_DB_MIGRATION_USER`、`APP_DB_MIGRATION_PASSWORD`) で Flyway を実行する。この接続はコネクションプールに入れず、マイグレーションが終わったら閉じる。マイグレーションに失敗したら、起動を中止する
+- その後に、アプリケーション用の利用者 (`APP_DB_USER`、`APP_DB_PASSWORD`) で HikariCP のコネクションプールを作る。要求の処理では、マイグレーション用の利用者を使わない
+- アプリケーション用の利用者への `GRANT` は、マイグレーションの SQL に書く。利用者の名前は Flyway のプレースホルダー (`${app_db_user}`) で渡し、`Database.java` が `APP_DB_USER` の値を設定する。後のマイグレーションでテーブルを追加する場合も、同じように `GRANT` を書く
+- 2 つの利用者 (ログインできるロール) を作ること自体は、マイグレーションでは行わない。開発の環境では、`compose.yaml` の PostgreSQL の初期化スクリプト (`compose/postgres/init.sql`) で作る。`POSTGRES_USER` を `app_owner` とし、初期化スクリプトで `app_user` を作る。本番の環境では、運用の担当者が、データベースを用意するときに同じ構成で作る。試験 (Testcontainers) でも、同じ初期化スクリプトを使う
 
 ## 8. 横断的な仕組み
 
@@ -740,6 +780,7 @@ erDiagram
 | OP-7 と OP-5、OP-6 が同時に行われた | 同じ行を `FOR UPDATE` で取り合う。OP-7 が先なら、後の操作は行が無いため E-06 |
 | OP-7 の後に、ほかのブラウザーで OP-4 ～ OP-7 を行った | `ON DELETE CASCADE` でセッションが消えているため、6.3 で未ログインになり E-06 |
 | 同じメールアドレスへのログインの失敗が同時に起きた | `login_attempts` の行の `FOR UPDATE` の中で 1 ずつ増やす |
+| ログインと、そのアカウントへの OP-5、OP-6、OP-7 が同時に行われた | ログインの成功の判断で、アカウントの行を `FOR UPDATE` で読み直し、メールアドレスとパスワードのハッシュが変わっていないことを確かめる。コミットまでロックを持つ (5.6.2) |
 
 - パスワードのハッシュの作成 (OP-1 のパスワード、OP-6 の新しいパスワード) は、トランザクションを始める前に行い、接続を握る時間を短くする。ロックの中で必要な照合 (OP-6 の今のパスワード、OP-7 のパスワード) だけを、トランザクションの中で行う
 
@@ -757,6 +798,7 @@ erDiagram
 - TLS は 1.2 以上とする。証明書と秘密鍵は `APP_TLS_CERT_PATH`、`APP_TLS_KEY_PATH` の PEM ファイルから読む
 - 応答に `Strict-Transport-Security: max-age=31536000` を付け、ブラウザーが以後 HTTPS だけを使うようにする
 - Cookie `SESSION` に `Secure` を付ける (6.2)
+- 開発の環境でも、ブラウザーから Vite の開発サーバー、Vite からバックエンドまでのすべての区間を HTTPS にする (4 章)
 
 ### 9.2 NFR-5: 性能 (100 人同時で 95% が 1 秒以内)
 
@@ -923,6 +965,7 @@ erDiagram
 | Java 21 | 長期サポートの版。record と switch の パターンマッチで、DTO と異常の扱いを簡潔に書ける | Java 17 (機能が少ない)、Kotlin (このリポジトリでは Java を前提とする) |
 | Gradle (Kotlin DSL) | ラッパーで版を固定でき、設定が短く書ける | Maven (どちらでもよいが、設定が長くなる) |
 | Flyway | SQL のファイルでスキーマの変更を管理でき、起動時に自動で適用できる | Liquibase (XML や YAML が主で、この規模では大げさ) |
+| データベースの利用者をマイグレーション用とアプリケーション用に分ける (7.6) | 要求の処理に使う利用者がテーブルを作る、変える、消す権限を持たないため、SQL の誤りや不正な入力でスキーマを壊されない。マイグレーションは起動時に自動で行える | 1 つの利用者に DDL の権限も与える (要求の処理で使う接続がスキーマを変えられてしまう)、マイグレーションを起動とは別の手順で行う (適用を忘れると、起動したアプリケーションとスキーマが食い違う) |
 | Vite + TypeScript | React の標準的なビルドの道具で、開発サーバーの中継 (4 章) が使える | Create React App (保守が止まっている) |
 | React Router | 画面ごとのパスとガード (3.3) を素直に書ける | 状態だけで画面を切り替える方式 (再読み込みやブラウザーの戻るで画面を保てない) |
 | 状態管理は React の Context だけ | 持つ状態がログイン状態とアカウントの 2 つの値だけで、ライブラリーが要らない | Redux など (この規模では大げさ) |
@@ -947,7 +990,7 @@ erDiagram
 実装計画で作業を分けるときの目安を、依存の順に示す。
 
 1. バックエンドの土台: Gradle の設定、`Main`、`AppConfig`、`WebServer` (HTTPS、静的ファイル、`SecurityHeaders`、`RequestLogger`)、`ErrorCode`、`ApiException`、`ErrorHandler`、`JsonBody`。`compose.yaml`
-2. データベースの土台: `Database`、`Tx`、Flyway のマイグレーション (7 章の 4 つのテーブル)
+2. データベースの土台: `Database`、`Tx`、Flyway のマイグレーション (7 章の 4 つのテーブルと、7.6 の権限)、`compose/postgres/init.sql` (7.6 の 2 つの利用者)
 3. 値と検査: `EmailAddress`、`DisplayName`、`RawPassword`、`InputValidator`
 4. パスワードのハッシュ: `PasswordHasher`
 5. 記録: `AuditEvent`、`AuditLogRepository`、`AuditLogger`
