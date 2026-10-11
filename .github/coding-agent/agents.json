@@ -8,17 +8,17 @@
     "claude": {
       "name": "Claude Code",
       "assignee": "shohei-yamagiwa-claude",
-      "bot": "your-claude-app[bot]",
+      "bot": "kyro-claude[bot]",
       "workflow": "coding-agent-claude.yml",
-      "appClientId": "your-claude-app-client-id",
+      "appClientId": "Iv23liwOH8CmfqnsXp4H",
       "model": null
     },
     "codex": {
       "name": "Codex",
       "assignee": "your-codex-account",
-      "bot": "your-codex-app[bot]",
+      "bot": "kyro-codex[bot]",
       "workflow": "coding-agent-codex.yml",
-      "appClientId": "your-codex-app-client-id",
+      "appClientId": "Iv23liMmrEQjGQOiUyVo",
       "model": null
     }
   },
@@ -29,7 +29,9 @@
       "architecture": "claude",
       "planning": "claude"
     },
-    "implementers": ["claude"],
+    "implementers": [
+      "claude"
+    ],
     "reviewer": "codex"
   }
 }
