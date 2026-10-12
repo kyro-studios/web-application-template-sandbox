@@ -5,11 +5,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import io.javalin.http.ContentTooLargeResponse;
 import io.javalin.http.Context;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.util.Locale;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -28,7 +25,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>値が文字列でない入力 (数値、null、オブジェクトなど) は、{@link #string(String)} では無いものとして扱う。
  *
- * <p>本文が {@link WebServer#MAX_REQUEST_SIZE} を超える場合は、413 で受け付けない。
+ * <p>本文が {@link WebServer#MAX_REQUEST_SIZE} を超える場合は、{@link RequestBodyLimit} により 413 で受け付けない。
  */
 public final class JsonBody {
     private static final Logger log = LoggerFactory.getLogger(JsonBody.class);
@@ -56,7 +53,7 @@ public final class JsonBody {
         if (cached != null) {
             return cached;
         }
-        JsonBody body = isJson(ctx.contentType()) ? parse(readBytes(ctx)) : EMPTY;
+        JsonBody body = isJson(ctx.contentType()) ? parse(RequestBodyLimit.bytes(ctx)) : EMPTY;
         ctx.attribute(CACHE_ATTRIBUTE, body);
         return body;
     }
@@ -97,22 +94,5 @@ public final class JsonBody {
         int semicolon = contentType.indexOf(';');
         String mediaType = semicolon < 0 ? contentType : contentType.substring(0, semicolon);
         return mediaType.strip().toLowerCase(Locale.ROOT).equals(JSON_MEDIA_TYPE);
-    }
-
-    private static byte[] readBytes(Context ctx) {
-        long max = WebServer.MAX_REQUEST_SIZE;
-        if (ctx.req().getContentLengthLong() > max) {
-            throw new ContentTooLargeResponse();
-        }
-        // Content-Length が無い (chunked の) 要求でも、上限を超えて読まない
-        try (InputStream in = ctx.bodyInputStream()) {
-            byte[] bytes = in.readNBytes(Math.toIntExact(max + 1));
-            if (bytes.length > max) {
-                throw new ContentTooLargeResponse();
-            }
-            return bytes;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
     }
 }

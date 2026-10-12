@@ -57,6 +57,7 @@ class WebServerTest {
                 throw new IllegalStateException("boom");
             });
             app.post("/api/body", ctx -> ctx.json(Map.of("email", JsonBody.read(ctx).string("email").orElse(""))));
+            app.post("/api/no-body", ctx -> ctx.json(Map.of("message", "ok")));
         });
     }
 
@@ -192,6 +193,32 @@ class WebServerTest {
         assertEquals(413, response.statusCode());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"text/plain", ""})
+    void ContentTypeがJSONでないContentLengthの無い要求でも上限を超える本文は受け付けない(String contentType) throws Exception {
+        HttpResponse<String> response = postChunked("/api/body", contentType, jsonOfSize((int) WebServer.MAX_REQUEST_SIZE + 1));
+
+        assertEquals(413, response.statusCode());
+        assertFalse(response.body().contains("user@example.com"));
+    }
+
+    @Test
+    void 本文を読まないルートでも上限を超える本文は受け付けない() throws Exception {
+        HttpResponse<String> response =
+                postChunked("/api/no-body", "application/json", jsonOfSize((int) WebServer.MAX_REQUEST_SIZE + 1));
+
+        assertEquals(413, response.statusCode());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"text/plain", ""})
+    void ContentTypeがJSONでない上限以内の本文は空のオブジェクトとして扱う(String contentType) throws Exception {
+        HttpResponse<String> response = postChunked("/api/body", contentType, jsonOfSize((int) WebServer.MAX_REQUEST_SIZE));
+
+        assertEquals(200, response.statusCode());
+        assertEquals("{\"email\":\"\"}", response.body());
+    }
+
     @Test
     void 要求のログにはメソッドとパスのテンプレートと状態と処理時間だけを書く() throws Exception {
         try (LogCapture logs = LogCapture.root()) {
@@ -227,6 +254,16 @@ class WebServerTest {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
         return send(request);
+    }
+
+    /** Content-Length を付けずに chunked で送る。{@code contentType} が空なら Content-Type を付けない。 */
+    private HttpResponse<String> postChunked(String path, String contentType, byte[] body) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(server.uri(path))
+                .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new ByteArrayInputStream(body)));
+        if (!contentType.isEmpty()) {
+            request.header("Content-Type", contentType);
+        }
+        return send(request.build());
     }
 
     /** ちょうど {@code size} バイトの JSON のオブジェクトを作る。 */

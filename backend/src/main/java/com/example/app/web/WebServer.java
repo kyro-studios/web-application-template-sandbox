@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>SSL プラグインで HTTPS だけを待ち受ける。HTTP のコネクターは作らない。TLS は 1.2 以上
  *   <li>{@code APP_STATIC_DIR} の静的ファイルを配信し、{@code /api} 以外の見つからないパスには {@code index.html} を返す
- *   <li>要求の本文の上限は 64 KB
+ *   <li>要求の本文の上限は 64 KB。{@code Content-Type} やルートによらず、すべての要求に {@link RequestBodyLimit} で適用する
  *   <li>すべての応答に {@link SecurityHeaders} のヘッダーを付ける
  *   <li>CORS の設定は行わない
  * </ul>
@@ -78,6 +78,7 @@ public final class WebServer {
         app.before(ctx -> {
             requestLogger.start(ctx);
             SecurityHeaders.apply(ctx);
+            RequestBodyLimit.enforce(ctx);
         });
         ErrorHandler.register(app);
         app.error(HttpStatus.NOT_FOUND, ctx -> serveIndexHtml(ctx, staticDir));
