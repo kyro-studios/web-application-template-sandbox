@@ -18,17 +18,19 @@ import type { Account } from '../api/types';
  */
 export type AuthStatus = 'checking' | 'unauthenticated' | 'authenticated' | 'error';
 
-/** E-06 で /login へ移るときに渡す、画面の遷移の状態 */
+/** E-06 や操作の成功 (OP-7 など) で /login へ移るときに渡す、画面の遷移の状態 */
 export interface LoginRedirectState {
   /** 表示する E-06 のメッセージ (API の message のまま) */
-  errorMessage: string;
+  errorMessage?: string;
+  /** 表示する成功のメッセージ (API の message のまま) */
+  successMessage?: string;
 }
 
 export interface AuthContextValue {
   status: AuthStatus;
   /** ログイン中のアカウントの表示名とメールアドレス。ログイン中でなければ null */
   account: Account | null;
-  /** E-06 で未ログインになったときの、/login へ移るときの状態。それ以外では null */
+  /** E-06 や操作の成功で未ログインになったときの、/login へ移るときの状態。それ以外では null */
   loginRedirectState: LoginRedirectState | null;
   /** status が error のときの、表示するメッセージ (API の message のまま)。それ以外では null */
   checkErrorMessage: string | null;
@@ -36,8 +38,8 @@ export interface AuthContextValue {
   retryCheck: () => void;
   /** ログイン中にし、アカウントの情報を持つ (OP-1、OP-5 の成功など) */
   markAuthenticated: (account: Account) => void;
-  /** 未ログインにする (OP-3、OP-7 の成功など) */
-  markUnauthenticated: () => void;
+  /** 未ログインにする (OP-3、OP-7 の成功など)。loginRedirectState は /login へ移るときに引き継ぐ */
+  markUnauthenticated: (loginRedirectState?: LoginRedirectState) => void;
   /**
    * GET /api/me を呼び直して、ログイン状態とアカウントの情報を更新する。
    * OP-2 の応答にはメールアドレスが含まれないため、ログインの後に使う
@@ -122,8 +124,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState(authenticated(account));
   }, []);
 
-  const markUnauthenticated = useCallback(() => {
-    setState(UNAUTHENTICATED);
+  const markUnauthenticated = useCallback((loginRedirectState?: LoginRedirectState) => {
+    setState({ ...UNAUTHENTICATED, loginRedirectState: loginRedirectState ?? null });
   }, []);
 
   const refresh = useCallback(async () => {
