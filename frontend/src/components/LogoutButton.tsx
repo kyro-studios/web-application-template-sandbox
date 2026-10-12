@@ -2,10 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { logout } from '../api/auth';
 import { ApiError } from '../api/client';
-import { useAuth } from '../auth/AuthContext';
+import { useAuth, type LoginRedirectState } from '../auth/AuthContext';
 import { Message } from './Message';
 
-/** OP-3 ログアウト。成功したら未ログインにして /login へ移る。E-90 ではメッセージを表示し、ログイン中のまま残る */
+/**
+ * OP-3 ログアウト。成功したら未ログインにして /login へ移り、成功の message を表示する。
+ * E-90 ではメッセージを表示し、ログイン中のまま残る
+ */
 export function LogoutButton() {
   const navigate = useNavigate();
   const { markUnauthenticated } = useAuth();
@@ -16,9 +19,10 @@ export function LogoutButton() {
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      await logout();
-      markUnauthenticated();
-      navigate('/login', { replace: true });
+      const { message } = await logout();
+      const loginRedirectState: LoginRedirectState = { successMessage: message };
+      markUnauthenticated(loginRedirectState);
+      navigate('/login', { replace: true, state: loginRedirectState });
     } catch (error) {
       setErrorMessage(error instanceof ApiError ? error.message : String(error));
       setSubmitting(false);

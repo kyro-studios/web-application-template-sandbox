@@ -10,6 +10,7 @@ export function LoginPage() {
   return (
     <main>
       <h1>ログイン</h1>
+      <Message type="success" text={redirectState?.successMessage} />
       <Message type="error" text={redirectState?.errorMessage} />
     </main>
   );

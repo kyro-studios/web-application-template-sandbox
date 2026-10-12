@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
+import { LoginPage } from '../pages/LoginPage';
 import { errorResponse, jsonResponse } from '../test/http';
 import { LogoutButton } from './LogoutButton';
 
@@ -41,7 +42,7 @@ function renderButton() {
       <AuthProvider>
         <Routes>
           <Route path="/account" element={<LogoutButton />} />
-          <Route path="/login" element={<h1>ログイン</h1>} />
+          <Route path="/login" element={<LoginPage />} />
         </Routes>
         <LocationProbe />
         <AuthProbe />
@@ -58,7 +59,7 @@ async function clickLogout() {
 }
 
 describe('LogoutButton (OP-3)', () => {
-  it('成功したら、未ログインになり /login へ移る', async () => {
+  it('成功したら、未ログインになり /login へ移り、成功の message を表示する', async () => {
     const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(200, { message: 'ログアウトしました' })));
 
     renderButton();
@@ -67,6 +68,8 @@ describe('LogoutButton (OP-3)', () => {
     expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
     expect(screen.getByTestId('auth')).toHaveTextContent('unauthenticated');
+    expect(screen.getByRole('status')).toHaveTextContent('ログアウトしました');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/session', expect.objectContaining({ method: 'DELETE' }));
   });
 

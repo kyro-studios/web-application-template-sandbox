@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { getMe, updateProfile } from '../api/auth';
 import { ApiError } from '../api/client';
@@ -14,7 +14,7 @@ function errorMessageOf(error: unknown): string {
 
 /** OP-4 と OP-5 自分のアカウントの情報の表示と変更 */
 export function AccountPage() {
-  const { markAuthenticated } = useAuth();
+  const { status, markAuthenticated } = useAuth();
   // OP-4 で読んだ、今の表示名とメールアドレス。読み終わるまでは null
   const [current, setCurrent] = useState<Account | null>(null);
   const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
@@ -24,6 +24,17 @@ export function AccountPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrorItem[]>([]);
+  // OP-5 の応答を待つ間に、ログアウトなどで画面を離れたり、未ログインになったりしたかを確かめるために使う
+  const mountedRef = useRef(false);
+  const statusRef = useRef(status);
+  statusRef.current = status;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // OP-4: 今の値を読み、表示と入力欄の初期値にする。
   // E-06 は api/client.ts と AuthContext が /login へ移すため、ここでは扱わない
@@ -58,16 +69,25 @@ export function AccountPage() {
     setFieldErrors([]);
     try {
       const { message, account } = await updateProfile({ email, displayName });
+      // 画面を離れた後や未ログインになった後の応答では、未ログインの状態をログイン中に戻さない
+      if (!mountedRef.current || statusRef.current !== 'authenticated') {
+        return;
+      }
       setCurrent(account);
       setDisplayName(account.displayName);
       setEmail(account.email);
       markAuthenticated(account);
       setSuccessMessage(message);
     } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
       setErrorMessage(errorMessageOf(error));
       setFieldErrors(error instanceof ApiError ? error.fieldErrors : []);
     } finally {
-      setSubmitting(false);
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
     }
   }
 

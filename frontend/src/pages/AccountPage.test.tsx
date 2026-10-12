@@ -109,7 +109,7 @@ describe('AccountPage (OP-4)', () => {
     expect(screen.getByRole('link', { name: 'アカウントの削除' })).toHaveAttribute('href', '/account/delete');
   });
 
-  it('ログアウトのボタンを置き、押すと /login へ移る', async () => {
+  it('ログアウトのボタンを置き、押すと /login へ移り、成功の message を表示する', async () => {
     stubFetch({ 'GET /api/me': [meOk], 'DELETE /api/session': [ok(200, { message: 'ログアウトしました' })] });
 
     renderAccount();
@@ -121,6 +121,7 @@ describe('AccountPage (OP-4)', () => {
     expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/login');
     expect(screen.getByTestId('auth')).toHaveTextContent('unauthenticated');
+    expect(screen.getByRole('status')).toHaveTextContent('ログアウトしました');
   });
 
   it('OP-4 が E-90 なら、メッセージを表示する', async () => {
@@ -227,6 +228,35 @@ describe('AccountPage (OP-5)', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('アカウントの情報を変更しました');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('応答を待つ間にログアウトしたら、遅れて届いた成功の応答でログイン中に戻さない', async () => {
+    const updated = { email: 'new@example.com', displayName: '山田 花子' };
+    let resolveUpdate: (response: Response) => void = () => {};
+    stubFetch({
+      'GET /api/me': [meOk],
+      'PUT /api/me/profile': [() => new Promise<Response>((resolve) => (resolveUpdate = resolve))],
+      'DELETE /api/session': [ok(200, { message: 'ログアウトしました' })],
+    });
+
+    renderAccount();
+    await waitForForm();
+    await act(async () => {
+      fillAndSubmit('山田 花子', 'new@example.com');
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'ログアウト' }));
+    });
+    expect(await screen.findByRole('heading', { name: 'ログイン' })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveUpdate(jsonResponse(200, { message: 'アカウントの情報を変更しました', account: updated }));
+    });
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/login');
+    expect(screen.getByTestId('auth')).toHaveTextContent(/^unauthenticated$/);
+    expect(screen.getByRole('heading', { name: 'ログイン' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('ログアウトしました');
   });
 
   it('E-06 なら、未ログインになり /login へ移り、E-06 のメッセージを表示する', async () => {
