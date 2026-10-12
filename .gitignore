@@ -14,9 +14,6 @@ target/
 out/
 *.class
 
-# Development TLS certificates (mkcert). Never commit them
-certs/
-
 # Local environment configuration (keep sample files)
 .env
 .env.*
@@ -26,9 +23,6 @@ certs/
 !.env.*.sample
 !.env.template
 !.env.*.template
-
-# Development TLS certificates and keys (never commit)
-certs/
 
 # Logs and JVM crash reports
 *.log
