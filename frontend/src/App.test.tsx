@@ -207,7 +207,8 @@ describe('ガードとルート', () => {
       expect(await screen.findByRole('heading', { name: HEADINGS.account })).toBeInTheDocument();
       expect(screen.getByTestId('auth')).toHaveTextContent('authenticated');
       expect(screen.queryByText(E90_MESSAGE)).not.toBeInTheDocument();
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      // 起動時の確認、再試行の確認、/account の画面の OP-4
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     },
   );
 

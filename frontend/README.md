@@ -57,7 +57,7 @@ src
 ├── api/              API の呼び出し (client.ts、types.ts、auth.ts)
 ├── auth/             ログイン状態 (AuthContext.tsx) とガード (RequireAuth.tsx、RequireGuest.tsx)
 ├── pages/            各画面
-└── components/       FieldError.tsx、Message.tsx
+└── components/       FieldError.tsx、Message.tsx、LogoutButton.tsx
 ```
 
 決まり (アーキテクチャ設計 3.3):
