@@ -1,7 +1,20 @@
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { MemoryRouter, useLocation } from 'react-router'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+// 移動の先を確かめるため、現在のパスを表示する
+function CurrentPath() {
+  return <p data-testid="current-path">{useLocation().pathname}</p>
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('App', () => {
   it('"/" を開くと、見出しを表示する', () => {
@@ -12,5 +25,41 @@ describe('App', () => {
     )
 
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Webアプリケーション')
+  })
+
+  it('"/announcements" を開くと、お知らせの一覧を表示する', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(jsonResponse({ announcements: [{ title: '新機能の案内', body: '本文', publishedDate: '2026-01-05' }] }))),
+    )
+
+    render(
+      <MemoryRouter initialEntries={['/announcements']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { level: 2, name: '新機能の案内' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('お知らせ')
+  })
+
+  it('ログインの確認 (GET /api/me) が E-06 でも、/login へ移らずに一覧を表示する', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input) === '/api/me') {
+        return Promise.resolve(jsonResponse({ error: { code: 'E-06', message: 'ログインが必要です' } }, 401))
+      }
+      return Promise.resolve(jsonResponse({ announcements: [{ title: '新機能の案内', body: '本文', publishedDate: '2026-01-05' }] }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <MemoryRouter initialEntries={['/announcements']}>
+        <App />
+        <CurrentPath />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { level: 2, name: '新機能の案内' })).toBeTruthy()
+    expect(screen.getByTestId('current-path').textContent).toBe('/announcements')
   })
 })
