@@ -2,12 +2,29 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import { createFakeCore, createFakeGitHub } from '../testing/fake-github.mjs';
 import { fixtureConfig } from '../testing/fixture-config.mjs';
-import { FIX_MARKER, fixRequestMarker, maxFixRounds, requestFix } from './request-fix.mjs';
+import { mergeableStateOptions } from './detect-conflicts.mjs';
+import { conflictFixRequestMarker, FIX_MARKER, fixRequestMarker, maxFixRounds, requestFix } from './request-fix.mjs';
+
+// マージできるかどうかを、待たずに取得する
+Object.assign(mergeableStateOptions, { attempts: 2, intervalMs: 0 });
 
 const config = fixtureConfig();
 const HEAD_SHA = 'abcdef0123456789abcdef0123456789abcdef01';
 const OLD_SHA = '0123456789abcdef0123456789abcdef01234567';
 const PR_NUMBER = 100;
+const DEVELOP_SHA = 'fedcba9876543210fedcba9876543210fedcba98';
+
+/**
+ * PR を、既定ブランチとコンフリクトしている状態にする。
+ *
+ * @param {ReturnType<typeof createFakeGitHub>} fake
+ */
+function makeConflicting(fake) {
+  fake.branches.develop = DEVELOP_SHA;
+  const pull = fake.pulls.get(PR_NUMBER);
+  assert.ok(pull?.detail);
+  Object.assign(pull.detail, { mergeable: false, mergeable_state: 'dirty' });
+}
 
 /**
  * 機能の親 Issue と、仕様書の段階の Issue と、それを Close する Claude の PR を用意する。
@@ -110,6 +127,8 @@ describe('requestFix', () => {
     assert.equal(request.issueNumber, specification.number);
     assert.equal(request.pullRequestNumber, PR_NUMBER);
     assert.equal(request.targetSha, HEAD_SHA);
+    // 修正は、PR を作ったエージェントの修正のモデルと effort で行う
+    assert.deepEqual(request.execution, { model: 'claude-fix-model', effort: 'low' });
     assert.equal(request.materials.pullRequest.headRef, 'coding-agent/claude/issue-2-1');
     assert.equal(request.materials.artifact, 'docs/features/1-user-login/specification.md');
     assert.deepEqual(request.materials.review, {
@@ -145,6 +164,55 @@ describe('requestFix', () => {
   it('人が作った PR や、レビュー担当が作った PR は修正しない', async () => {
     assert.deepEqual((await run(setup({ author: 'alice' }).fake)).result, {});
     assert.deepEqual((await run(setup({ author: 'codex-app[bot]' }).fake)).result, {});
+  });
+
+  it('既定ブランチとコンフリクトしていれば、取り込むコミットを指定して解消を依頼する', async () => {
+    const { fake } = setup({ reviews: [{ state: 'APPROVED', commit_id: HEAD_SHA }] });
+    makeConflicting(fake);
+
+    const { result } = await run(fake);
+
+    const request = result.requests?.[0];
+    assert.deepEqual(request?.materials.conflict, { baseSha: DEVELOP_SHA });
+    assert.equal(request?.materials.review, null);
+    assert.ok(fake.comments[0].body.includes('既定ブランチとのコンフリクト'));
+    assert.ok(fake.comments[0].body.includes(conflictFixRequestMarker(DEVELOP_SHA)));
+
+    // 同じコミットとのコンフリクトは二重に依頼しない
+    assert.deepEqual((await run(fake)).result, {});
+  });
+
+  it('差し戻しとコンフリクトが両方あれば、1 回の修正でまとめて依頼する', async () => {
+    const { fake } = setup();
+    makeConflicting(fake);
+
+    const request = (await run(fake)).result.requests?.[0];
+
+    assert.equal(request?.materials.review?.id, 1);
+    assert.deepEqual(request?.materials.conflict, { baseSha: DEVELOP_SHA });
+    assert.ok(fake.comments[0].body.includes(fixRequestMarker(1)));
+    assert.ok(fake.comments[0].body.includes(conflictFixRequestMarker(DEVELOP_SHA)));
+  });
+
+  it('差し戻しもコンフリクトも無ければ、修正を依頼しない', async () => {
+    const { fake } = setup({ reviews: [{ state: 'APPROVED', commit_id: HEAD_SHA }] });
+    const pull = fake.pulls.get(PR_NUMBER);
+    assert.ok(pull?.detail);
+    Object.assign(pull.detail, { mergeable: true, mergeable_state: 'clean' });
+
+    assert.deepEqual((await run(fake)).result, {});
+  });
+
+  it('差し戻しは、その段階のレビュー担当のものだけを見る', async () => {
+    // 仕様書のレビュー担当を claude にすると、codex の差し戻しでは修正しない
+    const original = config.agents.roles.specification;
+    config.agents.roles.specification = { author: { agent: 'codex' }, reviewer: { agent: 'claude' } };
+    try {
+      const { fake } = setup({ author: 'codex-app[bot]' });
+      assert.deepEqual((await run(fake)).result, {});
+    } finally {
+      config.agents.roles.specification = original;
+    }
   });
 
   it('PR でない番号は扱わない', async () => {

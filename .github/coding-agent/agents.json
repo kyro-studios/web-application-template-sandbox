@@ -11,27 +11,87 @@
       "bot": "kyro-claude[bot]",
       "workflow": "coding-agent-claude.yml",
       "appClientId": "Iv23liwOH8CmfqnsXp4H",
-      "model": null
+      "fix": {
+        "model": "claude-haiku-5-5",
+        "effort": "low"
+      }
     },
     "codex": {
       "name": "Codex",
-      "assignee": "your-codex-account",
+      "assignee": "shohei-yamagiwa-codex",
       "bot": "kyro-codex[bot]",
       "workflow": "coding-agent-codex.yml",
       "appClientId": "Iv23liMmrEQjGQOiUyVo",
-      "model": null
+      "fix": {
+        "model": "gpt-6-luna",
+        "effort": "low"
+      }
     }
   },
   "roles": {
-    "author": {
-      "specification": "claude",
-      "domain-model": "claude",
-      "architecture": "claude",
-      "planning": "claude"
+    "requirements": {
+      "reviewer": {
+        "agent": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      }
     },
-    "implementers": [
-      "claude"
-    ],
-    "reviewer": "codex"
+    "specification": {
+      "author": {
+        "agent": "claude",
+        "model": "claude-haiku-5-5",
+        "effort": "high"
+      },
+      "reviewer": {
+        "agent": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      }
+    },
+    "domain-model": {
+      "author": {
+        "agent": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "high"
+      },
+      "reviewer": {
+        "agent": "claude",
+        "model": "claude-haiku-5-5",
+        "effort": "medium"
+      }
+    },
+    "architecture": {
+      "author": {
+        "agent": "claude",
+        "model": "claude-sonnet-5-5",
+        "effort": "medium"
+      },
+      "reviewer": {
+        "agent": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      }
+    },
+    "planning": {
+      "author": {
+        "agent": "claude",
+        "model": "claude-sonnet-5-5",
+        "effort": "medium"
+      }
+    },
+    "implementation": {
+      "implementers": [
+        {
+          "agent": "claude",
+          "model": "claude-haiku-5-5",
+          "effort": "high"
+        }
+      ],
+      "reviewer": {
+        "agent": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      }
+    }
   }
 }
