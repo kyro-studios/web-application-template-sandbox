@@ -1,5 +1,6 @@
 import { Outlet, Route, Routes } from 'react-router'
 import { AnnouncementsPage } from './announcements/AnnouncementsPage'
+import { AppNavigation } from './components/AppNavigation'
 
 export function App() {
   return (
@@ -17,7 +18,7 @@ export function App() {
 function RootLayout() {
   return (
     <>
-      {/* 共通のナビゲーションは、この位置に置く */}
+      <AppNavigation />
       <main>
         <Outlet />
       </main>
