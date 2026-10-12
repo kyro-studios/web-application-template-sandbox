@@ -24,6 +24,9 @@ out/
 !.env.template
 !.env.*.template
 
+# Development TLS certificates and keys (never commit)
+certs/
+
 # Logs and JVM crash reports
 *.log
 hs_err_pid*
