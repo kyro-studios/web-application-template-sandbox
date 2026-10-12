@@ -142,6 +142,60 @@ describe('useAnnouncements', () => {
     expect(result.current.state).toEqual({ status: 'failure' })
   })
 
+  it('ヘッダーは届いたが本文の読み込みが 5 秒を過ぎると、失敗の状態にする', async () => {
+    vi.useFakeTimers()
+    // 本文は届かないまま止まる。中止されると、本文の読み込みも失敗する (実際の fetch と同じ)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason))
+          },
+        })
+        return Promise.resolve(new Response(stream, { status: 200 }))
+      }),
+    )
+    const { result } = renderAnnouncements()
+
+    await act(async () => {
+      vi.advanceTimersByTime(4999)
+    })
+    expect(result.current.state).toEqual(loading)
+
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(result.current.state).toEqual({ status: 'failure' })
+  })
+
+  it('中止を無視する本文の読み込みでも、5 秒を過ぎてから届いた内容は使わない', async () => {
+    vi.useFakeTimers()
+    let body: ReadableStreamDefaultController<Uint8Array> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            body = controller
+          },
+        })
+        return Promise.resolve(new Response(stream, { status: 200 }))
+      }),
+    )
+    const { result } = renderAnnouncements()
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000)
+    })
+    await act(async () => {
+      body?.enqueue(new TextEncoder().encode(JSON.stringify({ announcements: [item] })))
+      body?.close()
+    })
+
+    expect(result.current.state).toEqual({ status: 'failure' })
+  })
+
   it('中止を無視する取得でも、5 秒を過ぎてから届いた内容は使わない', async () => {
     vi.useFakeTimers()
     const { pending } = stubFetch({ honorAbort: false })
@@ -190,6 +244,28 @@ describe('useAnnouncements', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.current.state).toEqual(loading)
+  })
+
+  it('同じ URL へ移動したあと、取得の完了前に戻っても、前の画面の結果を使わず、取得中の状態にする', async () => {
+    const { fetchMock, pending } = stubFetch()
+    const { result } = renderAnnouncements()
+    await act(async () => {
+      pending[0].resolve(jsonResponse({ announcements: [item] }))
+    })
+    expect(result.current.state).toEqual({ status: 'success', items: [item] })
+
+    act(() => {
+      result.current.navigate('/announcements')
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    // history の「戻る」で、最初の画面の location.key に戻る
+    act(() => {
+      result.current.navigate(-1)
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(result.current.state).toEqual(loading)
   })
 
