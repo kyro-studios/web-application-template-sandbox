@@ -1,0 +1,13 @@
+# 開発用の PostgreSQL。利用者は、所有者 app_owner (マイグレーション用) と app_user (アプリケーション用)。
+# パスワードは開発専用の値のため、本番では使わない。
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app_owner
+      POSTGRES_PASSWORD: owner_password
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./compose/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
