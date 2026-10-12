@@ -13,7 +13,7 @@ export function RequireAuth() {
     return <AuthCheckError />;
   }
   if (status !== 'authenticated') {
-    // E-06 で未ログインになった場合は、E-06 のメッセージを /login へ引き継ぐ
+    // E-06 や操作の成功で未ログインになった場合は、そのメッセージを /login へ引き継ぐ
     return <Navigate to="/login" replace state={loginRedirectState} />;
   }
   return <Outlet />;
