@@ -22,6 +22,6 @@ public final class Main {
         AnnouncementService announcementService = new AnnouncementService(announcementRepository, Clock.systemUTC());
         AnnouncementController announcementController = new AnnouncementController(announcementService);
 
-        WebServer.create(announcementController).start(config.httpPort());
+        WebServer.createHttps(config, announcementController).start(config.httpsPort());
     }
 }

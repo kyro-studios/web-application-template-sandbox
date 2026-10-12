@@ -18,6 +18,10 @@ public final class PostgresTestSupport {
     static final String APP_USER = "app_user";
     static final String APP_PASSWORD = "app_user_password";
 
+    /** 試験専用の自己署名証明書。本番の証明書とは無関係で、{@code src/test/resources/tls} にある */
+    public static final String TEST_CERT_PATH = "src/test/resources/tls/test-cert.pem";
+    public static final String TEST_KEY_PATH = "src/test/resources/tls/test-key.pem";
+
     private static PostgreSQLContainer<?> shared;
 
     private PostgresTestSupport() {
@@ -42,6 +46,8 @@ public final class PostgresTestSupport {
 
     public static Map<String, String> env(PostgreSQLContainer<?> container) {
         return Map.of(
+                "APP_TLS_CERT_PATH", TEST_CERT_PATH,
+                "APP_TLS_KEY_PATH", TEST_KEY_PATH,
                 "APP_DB_URL", container.getJdbcUrl(),
                 "APP_DB_USER", APP_USER,
                 "APP_DB_PASSWORD", APP_PASSWORD,

@@ -18,6 +18,7 @@ repositories {
 
 dependencies {
     implementation("io.javalin:javalin:6.7.0")
+    implementation("io.javalin.community.ssl:ssl-plugin:6.7.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.22.3")
     implementation("org.jdbi:jdbi3-core:3.55.0")
     implementation("com.zaxxer:HikariCP:7.1.0")
