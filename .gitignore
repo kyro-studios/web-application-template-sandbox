@@ -14,6 +14,9 @@ target/
 out/
 *.class
 
+# Development TLS certificates (mkcert). Never commit them
+certs/
+
 # Local environment configuration (keep sample files)
 .env
 .env.*
