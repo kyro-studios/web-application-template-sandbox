@@ -69,3 +69,58 @@ while (true) {
   }
 }
 ```
+
+## バックエンド
+
+`backend/` は Java 21 と Javalin のアプリケーションです。ビルドには Gradle (Kotlin DSL) を使います。
+
+### ビルドと試験
+
+```sh
+cd backend
+./gradlew build   # コンパイルと試験
+./gradlew test    # 試験だけ
+```
+
+試験は、一時的な自己署名の証明書を作って HTTPS のサーバーを起動します。証明書を用意する必要はありません。
+
+### 開発用の証明書
+
+バックエンドは HTTPS だけで待ち受けます。開発の環境では、[mkcert](https://github.com/FiloSottile/mkcert) で `localhost` の証明書を作ります。証明書と秘密鍵はリポジトリに入れません (`certs/` は `.gitignore` で除外しています)。
+
+```sh
+mkcert -install   # ローカルの認証局を作り、端末のブラウザーに信頼させる (最初の 1 回だけ)
+mkdir -p certs
+mkcert -cert-file certs/localhost.pem -key-file certs/localhost-key.pem localhost 127.0.0.1 ::1
+```
+
+### 起動
+
+設定は環境変数から読みます。必須の値が無い場合は、起動を中止します。
+
+| 環境変数 | 必須 | 既定値 | 意味 |
+| --- | --- | --- | --- |
+| `APP_HTTPS_PORT` | いいえ | `8443` | HTTPS で待ち受けるポート |
+| `APP_TLS_CERT_PATH` | はい | ― | サーバー証明書 (PEM) のパス |
+| `APP_TLS_KEY_PATH` | はい | ― | 秘密鍵 (PEM) のパス |
+| `APP_DB_URL` | はい | ― | JDBC の URL (例: `jdbc:postgresql://localhost:5432/app`) |
+| `APP_DB_USER` | はい | ― | 要求の処理と定期処理で使う、データベースの利用者名 |
+| `APP_DB_PASSWORD` | はい | ― | `APP_DB_USER` のパスワード |
+| `APP_DB_MIGRATION_USER` | はい | ― | マイグレーションで使う、データベースの利用者名 |
+| `APP_DB_MIGRATION_PASSWORD` | はい | ― | `APP_DB_MIGRATION_USER` のパスワード |
+| `APP_DB_POOL_SIZE` | いいえ | `20` | コネクションプールの最大の数 |
+| `APP_STATIC_DIR` | いいえ | `../frontend/dist` | フロントエンドのビルド結果のディレクトリ |
+
+```sh
+cd backend
+export APP_TLS_CERT_PATH=../certs/localhost.pem
+export APP_TLS_KEY_PATH=../certs/localhost-key.pem
+export APP_DB_URL=jdbc:postgresql://localhost:5432/app
+export APP_DB_USER=app_user
+export APP_DB_PASSWORD=...
+export APP_DB_MIGRATION_USER=app_owner
+export APP_DB_MIGRATION_PASSWORD=...
+./gradlew run
+```
+
+起動すると `https://localhost:8443` で待ち受けます。HTTP (暗号化されていない通信) では接続できません。
