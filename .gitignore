@@ -24,9 +24,6 @@ out/
 !.env.template
 !.env.*.template
 
-# Development TLS certificates (created with mkcert)
-certs/
-
 # Logs and JVM crash reports
 *.log
 hs_err_pid*
