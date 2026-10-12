@@ -73,3 +73,5 @@ mkcert -cert-file certs/localhost.pem -key-file certs/localhost-key.pem localhos
 ```bash
 ./gradlew build
 ```
+
+データベースの試験は Testcontainers で PostgreSQL 16 のコンテナを起動するため、Docker が必要です。
