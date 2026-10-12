@@ -123,14 +123,14 @@ describe('request', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('skipUnauthorizedHandler を指定すると、E-06 でも登録した処理を呼ばない', async () => {
+  it('GET /api/me (起動時の確認を含む) の E-06 でも、登録した処理を呼ぶ', async () => {
     const handler = vi.fn();
     removeHandler = setUnauthorizedHandler(handler);
     stubFetch(unauthorizedResponse());
 
-    const error = await catchApiError(getMe({ skipUnauthorizedHandler: true }));
+    const error = await catchApiError(getMe());
 
     expect(error.code).toBe('E-06');
-    expect(handler).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledWith(error);
   });
 });

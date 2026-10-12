@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { changePassword, getMe } from './api/auth';
 import { App } from './App';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import { E06_MESSAGE, jsonResponse, unauthorizedResponse } from './test/http';
+import { E06_MESSAGE, errorResponse, jsonResponse, unauthorizedResponse } from './test/http';
+
+const E90_MESSAGE = '処理できませんでした。時間をおいてやり直してください';
 
 const ACCOUNT = { email: 'User@Example.com', displayName: '山田 太郎' };
 
@@ -88,23 +90,27 @@ describe('起動時のログイン状態の確認', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'GET' }));
   });
 
-  it('GET /api/me が E-06 なら未ログインになり、E-06 のメッセージは表示しない', async () => {
-    stubFetch(() => Promise.resolve(unauthorizedResponse()));
+  it.each(['/login', '/register'])(
+    'GET /api/me が E-06 なら、%s を開いても未ログインになり /login へ移り、E-06 のメッセージを表示する',
+    async (path) => {
+      stubFetch(() => Promise.resolve(unauthorizedResponse()));
 
-    renderApp('/login');
+      renderApp(path);
 
-    expect(await screen.findByRole('heading', { name: HEADINGS.login })).toBeInTheDocument();
-    expect(screen.getByTestId('auth')).toHaveTextContent('unauthenticated');
-    expect(screen.queryByText(E06_MESSAGE)).not.toBeInTheDocument();
-  });
+      expect(await screen.findByRole('heading', { name: HEADINGS.login })).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent('/login');
+      expect(screen.getByTestId('auth')).toHaveTextContent('unauthenticated');
+      expect(screen.getByRole('alert')).toHaveTextContent(E06_MESSAGE);
+    },
+  );
 
   it.each([
-    ['/account', '200', meOk, HEADINGS.account],
-    ['/account/password', '200', meOk, HEADINGS.password],
-    ['/account/delete', '200', meOk, HEADINGS.delete],
-    ['/login', 'E-06', unauthorizedResponse, HEADINGS.login],
-    ['/register', 'E-06', unauthorizedResponse, HEADINGS.register],
-  ])('%s: 結果 (%s) が出るまでガードは画面を出さない', async (path, _label, response, heading) => {
+    ['/account', '200', meOk, HEADINGS.account, '/account'],
+    ['/account/password', '200', meOk, HEADINGS.password, '/account/password'],
+    ['/account/delete', '200', meOk, HEADINGS.delete, '/account/delete'],
+    ['/login', 'E-06', unauthorizedResponse, HEADINGS.login, '/login'],
+    ['/register', 'E-06', unauthorizedResponse, HEADINGS.login, '/login'],
+  ])('%s: 結果 (%s) が出るまでガードは画面を出さない', async (path, _label, response, heading, resultPath) => {
     const me = deferred<Response>();
     stubFetch(() => me.promise);
 
@@ -119,7 +125,7 @@ describe('起動時のログイン状態の確認', () => {
     });
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent(path);
+    expect(screen.getByTestId('location').textContent).toBe(resultPath);
   });
 
   it('`/` は結果が出るまで移らない', async () => {
@@ -179,17 +185,40 @@ describe('ガードとルート', () => {
     expect(screen.getByTestId('location').textContent).toBe('/login');
   });
 
-  it('GET /api/me が E-06 以外の異常 (E-90) なら、未ログインとして扱う', async () => {
-    stubFetch(() =>
-      Promise.resolve(
-        jsonResponse(503, { error: { code: 'E-90', message: '処理できませんでした。時間をおいてやり直してください' } }),
-      ),
-    );
+  it.each(['/', '/login', '/register', '/account'])(
+    'GET /api/me が E-90 なら、%s でメッセージと再試行のボタンを出し、再試行で確かめ直す',
+    async (path) => {
+      let meCount = 0;
+      const fetchMock = stubFetch(() =>
+        Promise.resolve(meCount++ === 0 ? errorResponse(503, 'E-90', E90_MESSAGE) : meOk()),
+      );
 
-    renderApp('/');
+      renderApp(path);
 
-    expect(await screen.findByRole('heading', { name: HEADINGS.login })).toBeInTheDocument();
-    expect(screen.getByTestId('auth')).toHaveTextContent('unauthenticated');
+      expect(await screen.findByRole('alert')).toHaveTextContent(E90_MESSAGE);
+      expect(screen.getByTestId('auth')).toHaveTextContent('error');
+      expect(screen.getByTestId('location')).toHaveTextContent(path);
+      expectNoPage();
+
+      await act(async () => {
+        screen.getByRole('button', { name: '再試行' }).click();
+      });
+
+      expect(await screen.findByRole('heading', { name: HEADINGS.account })).toBeInTheDocument();
+      expect(screen.getByTestId('auth')).toHaveTextContent('authenticated');
+      expect(screen.queryByText(E90_MESSAGE)).not.toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('GET /api/me の通信が失敗したら、E-90 のメッセージと再試行のボタンを出す', async () => {
+    stubFetch(() => Promise.reject(new TypeError('Failed to fetch')));
+
+    renderApp('/login');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(E90_MESSAGE);
+    expect(screen.getByRole('button', { name: '再試行' })).toBeInTheDocument();
+    expectNoPage();
   });
 });
 

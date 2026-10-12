@@ -1,4 +1,4 @@
-import { request, type RequestOptions } from './client';
+import { request } from './client';
 import type {
   ChangePasswordRequest,
   ChangePasswordResponse,
@@ -32,8 +32,8 @@ export function logout(): Promise<LogoutResponse> {
 }
 
 /** OP-4 自分のアカウントの情報を見る */
-export function getMe(options?: RequestOptions): Promise<MeResponse> {
-  return request('GET', '/api/me', undefined, options);
+export function getMe(): Promise<MeResponse> {
+  return request('GET', '/api/me');
 }
 
 /** OP-5 表示名とメールアドレスの変更 */

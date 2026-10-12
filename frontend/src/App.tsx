@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router';
+import { AuthCheckError } from './auth/AuthCheckError';
 import { useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { RequireGuest } from './auth/RequireGuest';
@@ -14,6 +15,9 @@ function RootRedirect() {
 
   if (status === 'checking') {
     return null;
+  }
+  if (status === 'error') {
+    return <AuthCheckError />;
   }
   return <Navigate to={status === 'authenticated' ? '/account' : '/login'} replace />;
 }

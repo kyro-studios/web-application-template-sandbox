@@ -49,23 +49,10 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler): () => void
   };
 }
 
-export interface RequestOptions {
-  /**
-   * true なら、E-06 を受け取っても登録した処理を呼ばない。
-   * 起動時のログイン状態の確認のように、E-06 が「未ログイン」という結果にあたる場合に使う
-   */
-  skipUnauthorizedHandler?: boolean;
-}
-
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 /** API を呼ぶ。成功なら応答の本文を返し、異常なら ApiError を投げる */
-export async function request<T>(
-  method: Method,
-  path: string,
-  body?: unknown,
-  options: RequestOptions = {},
-): Promise<T> {
+export async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -90,7 +77,7 @@ export async function request<T>(
   }
 
   const error = toApiError(payload, response.status);
-  if (error.code === 'E-06' && !options.skipUnauthorizedHandler) {
+  if (error.code === 'E-06') {
     unauthorizedHandler?.(error);
   }
   throw error;
