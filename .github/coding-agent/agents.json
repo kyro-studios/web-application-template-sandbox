@@ -7,7 +7,6 @@
   "agents": {
     "claude": {
       "name": "Claude Code",
-      "assignee": "shohei-yamagiwa-claude",
       "bot": "kyro-claude[bot]",
       "workflow": "coding-agent-claude.yml",
       "appClientId": "Iv23liwOH8CmfqnsXp4H",
@@ -18,7 +17,6 @@
     },
     "codex": {
       "name": "Codex",
-      "assignee": "shohei-yamagiwa-codex",
       "bot": "kyro-codex[bot]",
       "workflow": "coding-agent-codex.yml",
       "appClientId": "Iv23liMmrEQjGQOiUyVo",
